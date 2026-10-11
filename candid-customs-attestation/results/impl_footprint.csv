@@ -1,0 +1,12 @@
+quantity,bytes
+record_bytes,279.3
+signature_set_bytes,213.0
+creator_certificate_bytes,452
+framing_bytes,588
+record_with_framing,867.3
+attestations_per_declaration,4.65
+per_declaration_candid,4033.0
+declaration_json_bytes,469.9
+declaration_record_with_framing,1057.9
+document_design_per_declaration,261057.9
+assumed_document_bytes,260000

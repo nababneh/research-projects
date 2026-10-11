@@ -1,0 +1,493 @@
+\documentclass[information,article,submit,moreauthors]{Definitions/mdpi}
+
+\firstpage{1}
+\makeatletter
+\setcounter{page}{\@firstpage}
+\makeatother
+\pubvolume{1}
+\issuenum{1}
+\articlenumber{0}
+\pubyear{2026}
+\copyrightyear{2026}
+\datereceived{ }
+\daterevised{ }
+\dateaccepted{ }
+\datepublished{ }
+
+\usepackage{booktabs}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{listings}
+\lstset{basicstyle=\ttfamily\scriptsize,columns=fullflexible,frame=single,framesep=3pt,
+  rulecolor=\color{gray},breaklines=true,xleftmargin=3pt,xrightmargin=3pt}
+
+\Title{Recording Provenance, Not Weighting It: Commitment-Based Attestation for Customs Administration}
+
+\newcommand{\orcidauthorA}{0000-0002-5051-4638}
+\Author{Nedal Ababneh $^{1,}$*\orcidA{}}
+\AuthorNames{Nedal Ababneh}
+\address{%
+$^{1}$ \quad College of Computing and Intelligent Systems, University of Khorfakkan, Sharjah, United Arab Emirates}
+\corres{Correspondence: Nedal.Ababneh@ukf.ac.ae}
+
+\abstract{Customs administrations are asked to trust declarations they cannot verify. Blockchain has been offered as a remedy for a decade, yet a 2022 survey of 110 administrations found only two full deployments. We argue that one contributing cause is a mismatch of target. A ledger makes a record tamper evident without establishing that the record was true when it was written. We present CANDID, a Customs Attestation Network for Declaration Integrity and Disclosure. It commits salted field-group hashes rather than payloads and records which off-chain source attested to which declared field. Its reference implementation sustained @@SUST_DUR@@ transactions per second with durable storage on two cores. That rate, measured with real cryptography within a one-second latency objective, is well above the estimated peak demand of a very large administration. Selectivity was evaluated on 54{,}000 synthetic Korean import declarations generated from real data, with a synthetic attestation layer drawn twenty times. Under the baseline generator the attestation record raised the area under the curve from @@M0_AUC@@ to @@RAW_AUC@@, and a sensitivity analysis shows this gain shrinking as sources become less informative. We then tested whether weighting provenance by source credibility helps. Seven policies were implemented, including Beta reputation, truth discovery and the likelihood-ratio rule that is optimal under conditional independence. No deployable policy improved on passing the raw per-source indicators to the classifier in any setting examined. In the evaluated setting the attestation record itself carries the value, and deployable weighting adds nothing that we could measure.}
+
+\keyword{blockchain; customs administration; trade facilitation; permissioned ledger; blockchain oracles; provenance; attestation; risk management; selectivity; e-government}
+
+\begin{document}
+
+\section{Introduction}
+
+Customs administrations sit at a chokepoint of the world economy. Every consignment that crosses a border carries a declaration whose accuracy the administration must assess with incomplete information and a fixed inspection budget. The declaration is only a claim. Its supporting evidence arrives from carriers and brokers and foreign authorities who lie outside the administration's control and whose incentives are frequently misaligned with it. That asymmetry is the problem this paper addresses.
+
+Blockchain technology has been proposed as the answer for close to a decade. The reasoning is intuitive and appears in almost every treatment of the subject, where a shared append-only ledger is presented as a way to raise transparency and accountability across a supply chain \cite{kshetri2018roles}. Reality has been unkind to that reasoning. A joint study by the World Customs Organization and the World Trade Organization surveyed 110 customs authorities \cite{wco2022disruptive}. Just two of them had reached full deployment at the time of the survey. A further 41 per cent reported no plans to adopt the technology at all and 33 per cent had reached only proof-of-concept or pilot stage. The gap between promise and practice is among the most consistent findings in the field.
+
+Two collapses illustrate the point clearly. TradeLens was the most prominent customs-facing blockchain consortium ever assembled, and its operator withdrew it in early 2023 on the stated grounds that the necessary global industry collaboration was never achieved and that commercial viability was never reached \cite{maersk2022tradelens}. CADENA was recorded as terminated in December 2021 \cite{unescap2024digitalizetrade}. These two projects were not small experiments, and neither of them was run by an inexperienced team. Between them they involved most of the administrations that the literature describes as adopters \cite{wco2022casestudies,unescap2024digitalizetrade}.
+
+We argue that one cause contributes to these failures and has been stated less plainly than it deserves. Immutability is a property of the record and not of the world the record describes. A falsified invoice committed to a ledger therefore becomes a permanently tamper-evident falsehood rather than a corrected one. This is the oracle problem \cite{caldarelli2020oracle,albreiki2020oracles}. It has been surveyed comprehensively \cite{pasdar2023oraclesurvey}, and earlier work approached it through graph-based profiling of oracle behaviour \cite{almiani2023oracles} and through automata-based monitoring of decentralised application quality \cite{alrawashdeh2024dfa}. Independent studies of supply chain blockchains reach a compatible conclusion, as Section~\ref{sec:related} shows. Customs is where the problem bites hardest, because the administration is the party that must act on the data and bear the legal and revenue consequences of acting wrongly. It is not one participant among equals. We do not claim that this cause explains every failure, since governance and commercial factors clearly mattered as well.
+
+Three questions organise the work that follows. The first asks whether the operating cost of a ledger is what prevents a customs administration from adopting one, which is the constraint the deployment literature most often names. The second asks how much a risk model gains from knowing which source attested to a field. It also asks how that gain depends on the quality of the sources, since real sources differ widely in reliability. The third asks whether weighting attestations by source credibility adds anything beyond recording them. Each question is answered by a measurement whose conditions are stated, rather than by an argument alone.
+
+This paper makes four contributions to the field. First, the deployment evidence is assembled from official sources, and confirmed operational systems are separated from pilots and from projects wrongly described as blockchain. Second, we present CANDID as a four-plane design. Its attestation plane commits field-group hashes rather than payloads, and we specify the interface between every pair of planes. Third, a reference implementation of the attestation plane is provided. Its throughput and latency and footprint are measured with real cryptography in volatile and durable configurations, together with the uncertainty of each figure. Fourth, we report a negative result. Seven weighting policies were implemented from the reputation and data-fusion and truth-discovery literatures, including the log-likelihood-ratio rule that is optimal when source errors are conditionally independent. None of them improved on handing the raw per-source attestation indicators to a gradient-boosted classifier. That held across twenty draws of the synthetic attestation layer and a sensitivity analysis over its parameters.
+
+The remainder of the paper is organised as follows. Section~\ref{sec:related} reviews blockchain fundamentals, what administrations have deployed and what the academic literature establishes. Section~\ref{sec:problem} formalises the customs setting. Section~\ref{sec:architecture} presents CANDID together with the provenance model that it records. Section~\ref{sec:evaluation} describes the evaluation design. Section~\ref{sec:results} reports the results and Section~\ref{sec:discussion} discusses what the evidence does and does not support. Section~\ref{sec:limitations} states the limitations and directions for future research. Section~\ref{sec:conclusion} draws the conclusions together and summarises the answers to the three questions.
+
+\section{Related Work and the Evidence Base}\label{sec:related}
+
+A blockchain is an append-only ledger replicated across several parties. Transactions are grouped into blocks, each block carries the cryptographic hash of its predecessor, and a consensus protocol decides which block extends the chain \cite{zheng2017overview}. Altering an old record would change every later hash. Tampering is therefore evident to any party that holds a copy of the chain and checks it. Smart contracts add logic that runs when a transaction is validated. Permissionless chains admit anyone and rely on economic incentives for consensus, whereas permissioned chains admit only identified members and use cheaper agreement protocols \cite{zheng2017overview,androulaki2018fabric}. Customs and trade applications use the permissioned form almost without exception, because the participants must be known to the administration.
+
+Tracking and tracing are the features most often claimed for supply chains. Tracking follows a consignment forward through custody changes, and tracing reconstructs its history backwards from a given point \cite{sunny2020supply}. Early systems recorded product origin and custody events on a shared ledger \cite{lu2017adaptable,tian2016agrifood}. Every partner could then query the same history, and systematic reviews organise the resulting literature around technology and trust and trade and traceability \cite{pournader2020blockchain,casino2019systematic}. Provenance in this sense means knowledge of origin and authenticity and custody \cite{montecchi2019real}. Each of these features guarantees that a recorded event has not changed since it was written into the ledger. None of them guarantees that the event was true, and that gap is our subject.
+
+The published record of customs deployment is thinner than the enthusiasm of the literature suggests. One clarification is needed before the table. The survey count of two full deployments reflects the position in 2022 under a strict threshold covering the core clearance systems of an administration, whereas Table~\ref{tab:deployments} also lists later and narrower systems that automate a single function. Table~\ref{tab:deployments} distinguishes systems in production from pilots and from projects that have closed. Vendor marketing material is excluded throughout, and quantitative claims whose only source is the system operator are marked.
+
+Egypt operates the largest programme by volume. Advance cargo information filing on the NAFEZA single window has been mandatory for sea freight since October 2021, and it runs through a commercial document transfer service anchored on a public chain \cite{nafeza2024aci,cargox2021polygon}. The reported outcomes are striking and should be read with care. Release time is reported to have fallen from a range of 16 to 29 days down to a range of 3 to 9 days, in a WCO News article authored by the system operator and its technology vendor \cite{wconews2022egypt}. No independent audit of that figure exists.
+
+Mercosur operates bConnect in production since October 2020. It runs on a permissioned ledger among five member countries, with an average transaction confirmation time of 3.5 seconds \cite{wco2022casestudies}. The deployed chaincode allows the exchange of authorised economic operator records. Member countries were still integrating their national systems when the case study was compiled. That confirmation figure is a system metric. It says nothing about whether traders cleared goods any faster, which is the outcome an administration actually cares about.
+
+Other confirmed systems are narrower in scope. Dubai Customs has operated a blockchain platform for cross-border electronic commerce since May 2021, generating declarations directly from transaction data, with automated duty refunds listed for a later phase \cite{unescap2024digitalizetrade}. Georgia anchors preferential certificates of origin on a public chain and exposes each one through a link to the underlying transaction \cite{wco2022disruptive}. Kenya moved to mandatory advance cargo declaration for containerised sea imports in August 2026, and the declaration is lodged through a platform the revenue authority operates \cite{kra2026acd}. The distributed ledger programme behind that work targets a ten per cent reduction in logistics time \cite{tma2026tlip}. Singapore's TradeTrust is real and operating, yet it governs electronic transferable records rather than customs clearance itself \cite{imda2024tradetrust}.
+
+The pilots are better documented than the deployments, and they are more informative. United States Customs and Border Protection completed two separate proofs of concept and published a final report on each of them. A certificate-of-origin exercise achieved a 100 per cent success rate across 22 hours of live testing with nine organisations and 25 operators \cite{cbp2019nafta}. An intellectual property rights exercise passed all of the required tests and all of the stretch tests over just above 10 hours of live testing \cite{cbp2020ipr}. Neither of them ever entered production. Korea Customs Service ran a permissioned-ledger pilot on electronic commerce imports and reported the most useful negative finding in the literature, namely that the initial cost of establishing and operating the blockchain exceeded that of other data-sharing arrangements and left maintenance and throughput problems unresolved \cite{wconews2020korea}.
+
+A final caution concerns the misattribution of systems. Several systems routinely described as blockchain are not, including the electronic phytosanitary certificate hub, the eTIR transit system and the production digitisation of ATA carnets \cite{unescap2024digitalizetrade,wco2022casestudies}. Counting them inflates the apparent adoption rate. A blockchain proof of concept for ATA carnets did run at the European Commission, and it was concluded in 2018 with the responsible directorate closing the activity by publishing lessons learned \cite{wco2022casestudies}. The 2024 survey of the World Customs Organization places blockchain seventh of ten technologies by full deployment, and it rates blockchain among the hardest to adopt \cite{wconews2024survey}.
+
+\begin{table}[H]
+\caption{Blockchain use by customs administrations. Outcomes marked $\dagger$ are operator reported.\label{tab:deployments}}
+\small
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{2.0cm}>{\raggedright\arraybackslash}p{2.5cm}>{\raggedright\arraybackslash}p{1.9cm}>{\raggedright\arraybackslash}p{2.4cm}>{\raggedright\arraybackslash}X}
+\toprule
+\textbf{Administration} & \textbf{Programme} & \textbf{Status} & \textbf{Function} & \textbf{Reported outcome}\\
+\midrule
+Egypt & NAFEZA ACI & Production since 2021 & Advance cargo information & Release 16 to 29 days down to 3 to 9 days$^\dagger$ \cite{wconews2022egypt}\\
+Mercosur & bConnect & Production since 2020 & AEO mutual recognition & 3.5 s mean confirmation$^\dagger$ \cite{wco2022casestudies}\\
+United Arab Emirates & Dubai Customs & Production since 2021 & E-commerce declarations & None published \cite{unescap2024digitalizetrade}\\
+Morocco & Customs data platform & Design stage & Trade data for valuation and risk & None published \cite{wco2022disruptive}\\
+Georgia & Revenue Service eCO & Active & Certificates of origin & None published \cite{wco2022disruptive}\\
+Kenya & TLIP and ACD & Mandatory since 2026 & Advance cargo declaration & Target, not outcome: 10\% logistics time reduction$^\dagger$ \cite{kra2026acd,tma2026tlip}\\
+European Union & Blockchain@TAXUD & Pilot & VAT identifier registry & None published \cite{wco2022casestudies}\\
+United States & CBP origin PoC & Pilot closed 2018 & Certificates of origin & 100\% test success over 22 h$^\dagger$ \cite{cbp2019nafta}\\
+United States & CBP IPR PoC & Pilot closed 2019 & Rights enforcement & 100\% test success over 10 h$^\dagger$ \cite{cbp2020ipr}\\
+Republic of Korea & KCS e-commerce pilot & Pilot closed 2020 & Low-value import clearance & Operating cost above alternatives \cite{wconews2020korea}\\
+Multi-country & TradeLens & Withdrawn 2023 & Shipment visibility & Withdrawn for lack of collaboration \cite{maersk2022tradelens}\\
+Pacific Alliance & CADENA & Terminated 2021 & AEO mutual recognition & None published \cite{wconews2018cadena,unescap2024digitalizetrade}\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The scholarly literature divides into an optimistic strand and a sceptical one, and the sceptical strand has aged better. Early work mapped blockchain onto supply chain objectives and onto information sharing in government \cite{kshetri2018roles,olnes2017government}. \O lnes et al. were careful even then, offering an explicit critical assessment of benefits they regarded as exaggerated and insisting that adoption be driven by need rather than by technology \cite{olnes2017government}. Their caution has since been vindicated. Systematic reviews of blockchain in electronic government find a literature dominated by conceptual and experimental designs, where only about a fifth of the reviewed studies reached even a prototype \cite{lykidis2021egov}. Adoption frameworks insist that institutional and market factors be analysed alongside technical ones \cite{janssen2020framework}. A recent review of adoption across national governments reached a compatible conclusion, finding transparency and efficiency gains that are real but considerably narrower than the advocacy literature claims \cite{almiani2026government}.
+
+Studies grounded in customs practice are more instructive than general surveys. Rukanova et al. studied a live TradeLens import flow involving Dutch Customs and developed a framework linking design choices to business-government value \cite{rukanova2021tradelens}. Allessie et al. analysed excise goods movements and concluded that blockchain alone cannot substitute for existing controls \cite{allessie2019excise}. Both of these are qualitative case studies, and neither attempts to quantify the effect on clearance time or on revenue collected. Van Engelenburg et al. \cite{vanengelenburg2019b2g} developed a business-to-government information-sharing architecture through a formal software design process. In that architecture firms prove data integrity without exposing sensitive detail, and the ledger records the identity of the party that added an event together with the party that later confirmed it. CANDID records instead which external source attested to which regulated field, and with what outcome.
+
+Parallel studies outside customs report findings that are consistent with our diagnosis. Powell et al. \cite{powell2022garbage} studied an Australian beef export project and reported that blockchain does not resolve conventional data quality problems at the point of capture, which leaves immutable records of possibly wrong data. Babich and Hilary \cite{babich2020distributed} list garbage in and garbage out among the main weaknesses of distributed ledgers. Chang et al. \cite{chang2020blockchain} observe that blockchain systems for cross-border trade rest on the assumption that stored information correctly reflects physical reality. Caldarelli et al. \cite{caldarelli2020overcoming} make the same point for traceability. Sternberg et al. \cite{sternberg2021struggle} followed a multi-actor logistics pilot that stalled amid organisational tensions, and the ledger could not ensure that correct data were entered. Kumar et al. \cite{kumar2020silver} call blockchain a costly storage medium. Studies of adoption barriers place organisational and inter-organisational obstacles alongside technical ones \cite{saberi2019blockchain,kouhizadeh2021blockchain,hastig2020blockchain}. Jensen et al. \cite{jensen2019tradelens} found few live solutions delivering business value. These findings come from different sectors and methods, and together they support the view that recording data immutably is not the binding problem. None of them tests this claim in customs.
+
+The critical literature also supplies the mechanisms of failure. Sternberg et al. \cite{sternberg2021struggle} identified a paradox and several tensions, in which the adoption decision of one actor recursively affects the decisions of the others. Roeck et al. \cite{roeck2020transaction} showed that distributed ledgers redistribute power and dependency between transacting parties, and net transaction-cost savings are therefore not automatic. W\"ust and Gervais \cite{wust2018needblockchain} supplied the decision procedure that much of this work skipped, and applying it honestly often returns the answer that a trusted database suffices. A recent editorial in operations management restates the sober consensus on scalability and standardisation \cite{lumineau2025charting}.
+
+Nothing about consensus establishes that an input was true. Caldarelli \cite{caldarelli2020oracle} put the point sharply, arguing that immutability and trustlessness claims are routinely transferred from Bitcoin to applications where they do not hold, and that the resulting overstatement is particularly damaging in traceability settings. The oracle literature has since matured into taxonomies of designs \cite{pasdar2023oraclesurvey}, comparative reviews of trust properties \cite{albreiki2020oracles} and analyses of observed failures \cite{caldarelli2021defi}. Almi'ani et al. profiled oracles as a graph and used the structural position of each node to characterise the behaviour of every source in the network \cite{almiani2023oracles}. Related work extended monitoring to decentralised application quality using finite automata \cite{alrawashdeh2024dfa}, and later work introduced trust decay \cite{ababneh2026trustdecay}.
+
+Customs sharpens the problem in a specific way. In decentralised finance an oracle failure costs money, and the loss is borne by the participants who chose to rely on it. In customs an input failure produces a wrong release decision whose cost falls on the public revenue and on legitimate traders. Behnke and Janssen \cite{behnke2020boundary} make the operational version of this point from field data, deriving eighteen boundary conditions for food supply chains that must hold before blockchain traceability functions. Among those conditions are the standardisation of traceability processes and interfaces, a joint platform, and independent governance. Each of those conditions is a prerequisite rather than a consequence of deploying the technology in the first place. That is not how they are usually treated.
+
+Three further literatures constrain any design. Measured performance work on permissioned ledgers establishes that throughput is configuration-dominated rather than fixed. Thakkar et al. \cite{thakkar2018benchmarking} moved a Fabric deployment from 140 to 2250 transactions per second. That gain came from caching and parallelised validation and bulk state-database access on 32-core peers. The platform paper reports above 3500 transactions per second in favourable topologies \cite{androulaki2018fabric}. Re-architected variants reach twenty thousand transactions per second on the same platform \cite{gorenflo2020fastfabric}. Benchmarking harnesses nonetheless place private blockchains far below conventional distributed databases \cite{dinh2017blockbench}. That comparison is one that an honest system design has to confront directly rather than quietly elide.
+
+Privacy work shows that confidentiality and auditability are compatible on a permissioned ledger. FabZK stores committed and encrypted entries while preserving verifiability through zero-knowledge proofs \cite{kang2019fabzk}, and auditable token schemes give a designated auditor inspection rights by construction \cite{androulaki2020auditable}. A customs regulator is precisely the designated auditor that these constructions assume.
+
+The legal literature draws the boundary that a responsible architecture must respect. Mik \cite{mik2017limitations} argues at length that smart contracts cannot capture the ambiguity and post-formation adjustment of real commercial dealings, and Micheler and Whaley \cite{micheler2020regtech} examine actual machine-executable reporting experiments and warn about the loss of interpretive flexibility. Legal obligations are declarative and defeasible, and declarative representations map onto them more naturally than imperative code does \cite{governatori2018legal}. Doctrinal work on electronic bills of lading reaches a compatible conclusion, namely that the statutory goals of the model law are achievable without a distributed ledger \cite{krebs2023blocking}.
+
+Finally, the machinery we test is not ours and we make no claim that it is. Weighting a binary decision by the log ratio of its detection and false-alarm rates is the optimal fusion rule of Chair and Varshney \cite{chair1986fusion}. Estimating those rates as Beta posteriors under exponential forgetting follows the Beta reputation system \cite{josang2002beta}. Jointly inferring the reliability of a source and the underlying truth is the subject of the truth discovery literature \cite{li2014resolving,li2016truth}. What is new here is the setting and the test. We are not aware of a prior customs design that records the identity of the attesting source as a first-class object, or of prior work that asks whether weighting that record earns its keep.
+
+\section{Problem Formulation}\label{sec:problem}
+
+Let $\mathcal{D}$ denote the stream of import declarations lodged with an administration. Each declaration $d \in \mathcal{D}$ asserts values for a set of regulated field groups $\mathcal{F}$, and we take $\mathcal{F} = \{\textit{value}, \textit{classification}, \textit{origin}\}$ because these three carry the revenue consequence and cover the fraud mechanisms documented by Vanhoeyveld et al. \cite{vanhoeyveld2020imbalanced}. Undervaluation is the mechanism the detection literature treats as most common \cite{kim2020date}. Write $x_f(d)$ for the declared value of field group $f$ and $x_f^{\star}(d)$ for its true value. The administration observes only the former. The gap between the two is what it must estimate.
+
+A set of off-chain sources $\mathcal{S}$ attests to consignments. Sources include carrier manifests, port community systems and certificate issuers, together with container telemetry and partner administration export records. Each source observes only part of a consignment and attests only within its competence. Let $\mathcal{A}_f(d) \subseteq \mathcal{S}$ be the sources attesting to field group $f$ of declaration $d$, and let $a_{s,f}(d) \in \{0,1\}$ record whether source $s$ corroborates the declared value.
+
+The administration operates under a hard inspection budget $B$, expressed as the fraction of declarations that may be examined. This is the central operational constraint. Published work on customs selectivity treats it as the defining feature of the problem, with the DATE model reporting 92.7 per cent precision and 49.3 per cent revenue recall on Nigerian import data at a one per cent inspection rate \cite{kim2020date}. Subsequent work examines the exploration and exploitation tension that a budget creates \cite{kim2023activelearning}.
+
+We assume the ledger itself is sound and concentrate on the inputs. Three distinct adversarial capabilities matter here.
+
+\textbf{Upstream concealment.} A trader falsifies a commercial invoice before any attestation is produced. Every documentary source downstream then replicates the falsehood in good faith, and corroboration is worthless for that field group. Only sources with an independent view retain any discriminating power.
+
+\textbf{Source collusion.} A source is compromised and corroborates whatever the trader declares. Because most declarations are honest, such a source remains highly accurate by any naive measure. This is the failure mode that defeats reputation systems built on raw agreement rates.
+
+\textbf{Non-stationarity.} A source behaves honestly for an extended period and then turns. Any weighting scheme with unbounded memory will continue to credit its historical record. The resulting lag is the window in which the adversary operates.
+
+Concealment deserves emphasis, because it is the assumption that most of the weighting literature quietly needs and that customs violates. When a falsified invoice propagates, the errors of the documentary sources are not conditionally independent given the true state of the declaration. They are correlated through a single latent cause. Section~\ref{sec:results} shows what that does to a rule which assumes otherwise, and how the result changes when concealment is absent.
+
+The evidence in Section~\ref{sec:related} yields the seven design requirements listed in Table~\ref{tab:requirements}. Two of them deserve a word here. Legal subordination follows from the boundary that the legal literature draws around executable code. Incremental value follows from the deployment record itself. Consortium formation is precisely where the earlier projects failed.
+
+\begin{table}[H]
+\caption{Design requirements and their evidential basis.\label{tab:requirements}}
+\small
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{1.1cm}>{\raggedright\arraybackslash}p{3.3cm}>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}p{2.6cm}}
+\toprule
+\textbf{ID} & \textbf{Requirement} & \textbf{Statement} & \textbf{Basis}\\
+\midrule
+R1 & Payload minimisation & Commercially sensitive data must not reside on a shared ledger & \cite{vanengelenburg2019b2g}\\
+R2 & Auditability & The administration must retain the ability to open any commitment & \cite{androulaki2020auditable}\\
+R3 & Source attribution & The identity of the attesting source must be recorded, not merely the existence of an attestation & \cite{caldarelli2020oracle}\\
+R4 & Adaptivity & Any learned component must be able to forget & \cite{ababneh2026trustdecay}\\
+R5 & Legal subordination & Automated logic must produce a recommendation and a reason rather than a binding decision & \cite{governatori2018legal,mik2017limitations}\\
+R6 & Graceful interoperation & Exchange with a partner administration must not require a shared ledger instance & \cite{belchior2021interop}\\
+R7 & Incremental value & The design must deliver benefit to a single administration before any consortium forms & \cite{sternberg2021struggle,maersk2022tradelens}\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{The CANDID Architecture}\label{sec:architecture}
+
+CANDID is organised as four connected planes that share one set of data. Figure~\ref{fig:architecture} gives the structural view as components and connectors. Each rounded box is a software component and each cylinder is a data store, while dashed boxes are external actors. Every arrow names the artefact that flows. Figure~\ref{fig:lifecycle} gives the behavioural view of the same design as a numbered sequence of messages over the life of one declaration. Both figures use the same names. Table~\ref{tab:planes} states the input and output of each plane together with the experiment that evaluates it.
+
+\begin{figure}[H]
+\begin{adjustwidth}{-\extralength}{0cm}
+\centering
+\includegraphics[width=17.2cm]{figures/R2/fig1_architecture.pdf}
+\end{adjustwidth}
+\caption{Component view of CANDID.\label{fig:architecture}}
+\end{figure}
+
+The planes are connected by the data that flows between them. Off-chain sources and the trader feed the attestation plane, which writes endorsed commitments to the attestation ledger. The provenance builder reads committed events and maintains the attestation matrix. The risk model in the control plane reads that matrix together with the declaration features held in the system of record. Its score passes to the rule engine. The recommendation and reasons of that engine reach the customs officer, and audited outcomes later return as training labels. The interoperability plane reads the same ledger records and relays them to partner administrations.
+
+Each plane consumes a defined input and produces a defined output. A plane can therefore be deployed before the planes that consume its output, provided that its own input exists. The attestation plane needs only its sources and the system of record. The provenance plane needs a log of attestation events, which may come from the attestation plane or from a signed log kept by the administration. The control plane needs the matrix and an existing risk model, and the interoperability plane needs committed records and a key register. This ordering lets an administration start with one plane and add the next once the earlier one has shown value, which is how the design meets R7.
+
+\begin{table}[H]
+\caption{Plane interfaces and evaluation status.\label{tab:planes}}
+\small
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{1.9cm}>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}p{2.9cm}>{\raggedright\arraybackslash}p{1.5cm}}
+\toprule
+\textbf{Plane} & \textbf{Input} & \textbf{Output and consumer} & \textbf{Status here} & \textbf{Evaluated in}\\
+\midrule
+Attestation & Source attestations, payload and salt key from the system of record & Endorsed commitment records for the provenance builder and the gateway & Implemented as a reference node & E1\\
+Provenance & Committed events and the source register & Matrix $a_{s,f}(d)$ for the risk model & Implemented, attestation content synthetic & E2, E3, E4\\
+Control & Matrix, declaration features and audited labels & Recommendation and reasons for the officer & Risk model implemented, rule engine specified & E2 to E4 for the risk model\\
+Interoperability & Committed records, key register and partner requests & Verified attestations for a partner administration & Specified, not implemented & Not evaluated\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Attestation Plane}
+
+The attestation plane writes commitments and never payloads. For each field group $f$ of a declaration the plane computes a salted commitment $c_f = H(r_f \Vert x_f)$, where $H$ is SHA-256 and $r_f$ is a per-field salt derived by HKDF from a key the administration holds. The commitment, the attesting source identifier, a monotonic version number and the endorsement signature set are ordered and committed. The payload itself stays inside the system of record of the administration, and it never reaches the shared ledger at all. Algorithm~\ref{alg:attest} gives the write path and the disclosure path exactly as the reference node implements them.
+
+\begin{algorithm}[H]
+\caption{Attestation write and selective disclosure.\label{alg:attest}}
+\small
+\begin{algorithmic}[1]
+\Require declaration $d$, field group $f$, attested value $x$, source $s$, salt key $K$, endorsers $P$
+\State $r_f \gets \mathrm{HKDF}(K, d \Vert f)$ \Comment{salt stays with the administration}
+\State $c \gets \mathrm{SHA256}(r_f \Vert x)$ \Comment{value is canonicalised first}
+\State $v \gets$ current version of key $(d, f, s)$ in the state database
+\State $m \gets (d \Vert f \Vert s,\ c,\ v)$
+\For{each endorser $p \in P$}
+  \State $\sigma_p \gets \mathrm{Sign}_p(m)$ \Comment{ECDSA over P-256}
+\EndFor
+\State submit $(m, \{\sigma_p\})$ for ordering, and cut a block at $b$ transactions or after $\tau$ seconds
+\State validator verifies every $\sigma_p$ and rejects $m$ if the version of $(d, f, s)$ differs from $v$
+\State validator writes $(c, s, v+1)$ under key $(d, f, s)$ and appends the block header
+\Statex \textbf{Disclosure of field group $f$ to a counterparty $Q$}
+\State send $(x, r_f)$ to $Q$ over an authenticated channel
+\State $Q$ accepts if $\mathrm{SHA256}(r_f \Vert x)$ equals the ledger value of $c$ and every $\sigma_p$ verifies
+\end{algorithmic}
+\end{algorithm}
+
+The declarant's own filing is committed in the same way, under its own source identifier and with the same salt. Because the salt depends only on the declaration and the field group, equal values produce equal commitments. The provenance plane can therefore decide whether a source corroborates a declared value by comparing two commitments, without reading either payload. Numeric values are canonicalised to a tolerance band before hashing. The width of that band is a policy choice that belongs to the administration. Listing~\ref{lst:record} in Section~\ref{sec:results} shows a record produced by the reference node.
+
+This choice follows R1 and R2 directly, and it inherits the confidentiality-with-audit constructions established for permissioned ledgers \cite{kang2019fabzk,androulaki2020auditable}. Selective disclosure is performed off chain by revealing $x_f$ and $r_f$ to a specific counterparty. That counterparty verifies against the on-chain commitment without learning anything about other field groups or other declarations. The security triad analysis of public-sector blockchain identifies the advantage of non-repudiability \cite{warkentin2020triad}. An endorsed commitment provides exactly that property, and it is the only property the shared ledger needs to supply.
+
+Execute-order-validate semantics are adopted because the endorsement policy is the natural place to express which parties must witness an attestation \cite{androulaki2018fabric}. Corridor traffic is separated into channels by trade lane. That containment limits the blast radius of a compromised participant and keeps validation work proportional to the traffic a peer actually cares about. The output of this plane is the stream of committed records. It is consumed by the provenance builder and by the corridor gateway.
+
+\subsection{Provenance Plane}
+
+The provenance plane records, for each declaration, which source attested to which field group and whether it corroborated or contradicted the declared value. The provenance builder derives that record from the committed events and from the source register, which lists each source and the field groups within its competence. The result is a matrix $a_{s,f}(d) \in \{0, 1, \bot\}$ over sources and field groups, where $\bot$ marks the absence of an attestation. It is exposed directly to whatever risk model the administration already runs, and that hand-over is the output of this plane.
+
+The obvious next step is to weight those entries by how much the word of each source is worth, and the literature offers a well-developed answer. For each source $s$ we define two rates
+\begin{equation}
+d_s = \Pr\!\left[a_{s,f}(d) = 0 \mid x_f(d) \neq x_f^{\star}(d)\right], \qquad
+q_s = \Pr\!\left[a_{s,f}(d) = 0 \mid x_f(d) = x_f^{\star}(d)\right],
+\end{equation}
+that is the probability that the source contradicts a declaration when the declaration is false, and the probability that it contradicts one when the declaration is true. Weighting a contradiction by $\log(d_s/q_s)$ and a corroboration by $\log\!\big((1-d_s)/(1-q_s)\big)$ gives the accumulated evidence that field group $f$ is false,
+\begin{equation}\label{eq:llr}
+\Lambda_f(d) \;=\; \sum_{s \in \mathcal{A}_f(d)}
+\Big[ \big(1-a_{s,f}(d)\big)\log\frac{d_s}{q_s}
+\;+\; a_{s,f}(d)\log\frac{1-d_s}{1-q_s} \Big],
+\end{equation}
+which is the optimal fusion rule when the sources err independently \cite{chair1986fusion}. The full rule adds the prior log-odds of falsity. That term is the same for every declaration and does not change a ranking, and it is omitted for that reason.
+
+The rates $d_s$ and $q_s$ are estimated as Beta posteriors from the audited subset, following the Beta reputation system \cite{josang2002beta}. Each rate has its own pair of shape parameters, initialised at the uniform prior $\alpha = \beta = 1$. When $\Delta t$ days have passed since the previous update, both parameters are first discounted towards the prior,
+\begin{equation}\label{eq:decay}
+\alpha \leftarrow 1 + \gamma(\alpha - 1), \qquad \beta \leftarrow 1 + \gamma(\beta - 1), \qquad \gamma = e^{-\lambda \Delta t / 30},
+\end{equation}
+and matured audit evidence is then added to them. For $d_s$ a contradiction of an audited false field increments $\alpha$ and a corroboration increments $\beta$. For $q_s$ the same counts are taken over audited true fields. The point estimate of each rate is the posterior mean $\alpha/(\alpha+\beta)$, which starts at one half. Multiplying both shape parameters by $\gamma$ would leave that mean unchanged. Equation~(\ref{eq:decay}) discounts only the evidence accumulated above the prior, which is what lets recent behaviour dominate and what satisfies requirement R4. Weighting by accuracy alone would fail, because a source that corroborates everything looks accurate when fraud is rare.
+
+Two properties of this construction are worth stating precisely before we test it. A silent source receives no new evidence, and Equation~(\ref{eq:decay}) pulls both of its rates towards one half. Its two weights therefore tend to zero, which is the uninformative point $d_s = q_s$. A source that colludes fully corroborates every declaration it sees and never contradicts one of them. Both $d_s$ and $q_s$ then fall towards zero together. The corroboration weight $\log\big((1-d_s)/(1-q_s)\big)$ then tends to zero and contradictions no longer occur to be weighted. If only $d_s$ fell while $q_s$ stayed positive, the weight would tend to $-\log(1-q_s)$. That value is positive, and a corroboration would then count as weak evidence that the field is false. Partial collusion lies between these two limits. The estimator thus discounts a colluding source in both cases, but it contains no explicit rule that detects collusion as such.
+
+Summing across sources nonetheless assumes that the errors of the sources are conditionally independent, and upstream concealment violates that assumption by construction. The estimator is therefore overconfident on exactly the declarations that matter most. We treat that as an empirical question rather than as a fatal objection to the design. Section~\ref{sec:evaluation} defines a mixture correction, and Section~\ref{sec:results} reports whether any of this pays.
+
+\subsection{Control Plane}
+
+The control plane evaluates a declarative rule set over the declaration and its provenance record, and it emits a release recommendation together with the reasons that produced it. Its risk model combines the declaration features from the system of record with the attestation matrix and returns a score. The distinction between a recommendation and a decision is not cosmetic, because it follows R5 and the legal analysis behind it \cite{governatori2018legal,mik2017limitations,micheler2020regtech}. It keeps the human officer as the locus of legal authority.
+
+Rules are expressed declaratively rather than imperatively. A defeated rule then leaves a trace of what defeated it, and the resulting case file is what the officer sees. Similar structures appear in earlier frameworks for construction regulation \cite{alsuwaidi2024construction} and housing support \cite{alsuwaidi2024housing}. In both of those frameworks the same separation between automated assessment and administrative decision was necessary. The officer's decision and any later audit outcome return to the risk model as labels.
+
+\subsection{Interoperability Plane}
+
+Cross-border exchange is handled by gateways rather than by a shared ledger instance. A partner administration receives an attestation and its commitment, verifies the endorsement signatures against the key register, and forms its own view. Neither side needs to join the network of the other. This follows the notary pattern catalogued in both interoperability surveys and the gateway pattern described by Belchior et al. \cite{belchior2021interop,ren2023interop}, and it satisfies R6.
+
+The design choice is also a political one. Shared customs infrastructure has already failed to sustain itself twice \cite{unescap2024digitalizetrade,maersk2022tradelens}, and a gateway architecture degrades to bilateral operation rather than to nothing. Figure~\ref{fig:lifecycle} shows the resulting lifecycle from pre-arrival attestation through to the audited outcome and the optional exchange with a partner.
+
+\begin{figure}[H]
+\begin{adjustwidth}{-\extralength}{0cm}
+\centering
+\includegraphics[width=17.2cm]{figures/R2/fig2_lifecycle.pdf}
+\end{adjustwidth}
+\caption{Message sequence for one declaration.\label{fig:lifecycle}}
+\end{figure}
+
+\section{Evaluation Design}\label{sec:evaluation}
+
+CANDID is evaluated through four experiments and a sensitivity analysis, each targeting a claim a reviewer should be able to reject. E1 measures the reference implementation of the attestation plane and asks whether ledger cost is the binding constraint on a customs deployment. E2 asks whether recording provenance improves selectivity under a fixed inspection budget. E3 asks whether weighting that provenance improves it further, and it is the experiment this paper exists to report. E4 tests robustness to audit latency and to sources that turn. The sensitivity analysis varies the parameters of the synthetic attestation layer one at a time, because E2 and E3 depend on them. Figure~\ref{fig:workflow} shows how data and settings flow through every experiment.
+
+\begin{figure}[H]
+\begin{adjustwidth}{-\extralength}{0cm}
+\centering
+\includegraphics[width=17.2cm]{figures/R2/fig3_workflow.pdf}
+\end{adjustwidth}
+\caption{Evaluation workflow.\label{fig:workflow}}
+\end{figure}
+
+The reference implementation performs real cryptography and real state-database work. Commitments are SHA-256 hashes over a field-group value and a salt derived with HKDF from a key that the administration holds. Endorsements are ECDSA signatures over NIST P-256. They are produced one after another in the proposing thread, and validation verifies every signature on a pool of four worker threads, or two for small blocks. An MVCC read-write-set conflict check follows. Commit writes a batch to a SQLite state database and appends the block header in the same transaction. This is a reference node rather than Hyperledger Fabric. It omits gossip and membership services and chaincode containers, and its numbers should be read as the cost of the critical path on one node rather than as a Fabric benchmark.
+
+Every E1 measurement ran on a cloud virtual machine with two virtual cores of an Intel Xeon processor at 2.10 GHz and 8 GB of memory. The software was Linux kernel 6.18 with Python 3.13, the cryptography library 50.0 and SQLite 3.45. Two storage modes were measured, because durability changes the cost of every block commit. The volatile mode keeps the database in memory without journalling or synchronous writes. The durable mode writes a file-backed database in write-ahead-log mode with full synchronisation, which forces the data to stable storage at every block commit. Each run writes 12{,}000 attestations whose keys cycle over three field groups and six sources, and no two transactions conflict.
+
+Throughput was measured in two ways because the two answer different questions. The closed-loop test generates proposals back to back and cuts a block whenever $b$ transactions are buffered, with $b = 250$ for large blocks and $b = 10$ for small ones. It reports the drain rate of the node with no queue outside the buffer. The open-loop test draws Poisson arrival times in advance at an offered rate and never drops an arrival. Latency runs from the scheduled arrival to the block commit and includes queueing delay. A block is cut at 250 transactions or when the oldest buffered transaction has waited 0.5 seconds, whichever comes first. Closed-loop runs were repeated five times and open-loop runs three times. We call the highest offered rate at which the 95th-percentile latency stays below one second and less than one block remains queued at the end of the window the sustainable throughput.
+
+Demand was converted into transactions with an explicit formula. An administration lodging $N$ declarations a year generates a peak load of
+\begin{equation}\label{eq:peak}
+\lambda_{\text{peak}} = \kappa \, \frac{N \, (a + c + u)}{T},
+\end{equation}
+where $T = 31{,}536{,}000$ seconds is one year. The term $a = 10.29$ is the mean number of field-level attestations per declaration under the generator below, and $c = 3$ counts the commitments of the declared values themselves. The term $u = 1$ allows one amendment or status record per declaration. The peak-to-mean factor is $\kappa = 4$ in the baseline case, which assumes that the busiest hour carries four times the average load. A stress case sets $\kappa = 12$, which places all traffic in working hours and adds a threefold intraday peak.
+
+The selectivity substrate is the Customs Import Declaration Dataset \cite{jeong2022dataset}. Its publishers, who include staff of the Korea Customs Service, fitted a conditional tabular generative adversarial network to the inspected part of 24.7 million declarations filed between January 2020 and June 2021. They then released 54{,}000 synthetic records with 22 attributes and two labels. The records and the labels are therefore synthetic draws from a model of real data, and not real declarations. We use this substrate for three reasons. Record-level customs data with inspection outcomes are confidential, and we know of no other public dataset of this kind. The publishers designed it for fraud-detection research and defined a temporal split for that purpose. They also report how closely it matches the source data, with a column-shape similarity of 0.83 for numeric and 0.89 for categorical attributes and a correlation similarity of 0.96. Their own experiments show a limitation that matters here. Boosted-tree detectors score higher on the synthetic data than on the source data, for example 0.78 against 0.53 precision at a five per cent budget for LightGBM \cite{jeong2022dataset}. Absolute scores on this substrate are therefore optimistic, and we rely on it for comparisons in which every policy sees the same records.
+
+No record was removed and no value was imputed. The three published files of 37{,}385 and 8{,}134 and 8{,}481 records were concatenated, dates were parsed and records were sorted by date with a stable sort. The courier identifier is missing for 44{,}462 records and is treated as its own category. Declaration features number 25 and comprise log-transformed price and mass and unit value with a causally computed unit-value $z$ score within the six-digit tariff heading. Importer and seller fraud histories are built only from earlier records, and categorical attributes are coded as integers. The histories use the labels of all earlier records, which flatters the declaration-only baseline because a real administration knows outcomes only for inspected goods. Train and validation are pooled for fitting, and the last three months are held out.
+
+The fraud rate of the substrate is 21.6 per cent, far above the rate that real administrations observe. Those observed rates run from about 1 to 8 per cent \cite{singh2023graphfc}, and an inspection budget of one per cent is trivially all fraud at the higher figure. We therefore report the main results on a population-calibrated sample. All 42{,}347 non-fraud records are kept and 1{,}310 of the 11{,}653 fraud records are drawn once at random, which gives 43{,}657 records at a three per cent base rate. The held-out quarter of this sample contains 6{,}845 records of which 199 are fraudulent. Results on the uncalibrated substrate are reported as well, because they show whether the conclusions depend on the base rate.
+
+The attestation layer is ours and we are explicit about it. Six source types are bound to entities in the substrate, but their availability mixes data-driven rules with random draws, and Table~\ref{tab:params} lists each rule. A fraudulent declaration always falsifies the value field, because the fraud label marks an attempt to reduce duty. Classification is marked false when the six-digit code modulo seven is below three, which is an arbitrary partition with no customs meaning that touches 44 per cent of frauds. Origin is marked false when the declared origin differs from the departure country or with probability 0.25. Each available source then contradicts a false field with its detection rate and a true field with its false-alarm rate. Upstream concealment is a single latent variable per declaration. It hits 45 per cent of fraudulent consignments and blinds documentary sources with probability 0.85 and independent sources with probability 0.25, which is what makes the errors of the sources correlated.
+
+No published study reports per-source detection or false-alarm rates for customs attestations, and none reports how often concealment occurs. The baseline values in Table~\ref{tab:params} are therefore assumptions. They make every source informative but imperfect, with documentary sources weaker than independent ones. We do not ask the reader to accept them. The sensitivity analysis scales detection from 0.15 to 1.15 times its baseline and false alarms from 0.5 to 3 times, and it varies concealment from zero to 0.85. It also varies both blinding probabilities and the shares of labelled records available to the classifier and to the learned policies.
+
+\begin{table}[H]
+\caption{Experimental materials and parameters.\label{tab:params}}
+\small
+\begin{adjustwidth}{-\extralength}{0cm}
+\begin{tabularx}{\fulllength}{>{\raggedright\arraybackslash}p{3.2cm}>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}p{5.6cm}}
+\toprule
+\textbf{Item} & \textbf{Setting} & \textbf{Basis or range examined}\\
+\midrule
+Substrate & 54{,}000 synthetic declarations, 22 attributes, published temporal split & \cite{jeong2022dataset}\\
+Calibrated sample & 43{,}657 records at 3\% fraud, test quarter 6{,}845 with 199 fraud & Observed rates of 1 to 8\% \cite{singh2023graphfc}\\
+Partner export record & Independent, all three fields, $d = 0.86$, $q = 0.08$. Present if departure country is among the top 20 and a 0.80 draw succeeds & Detection scaled 0.15 to 1.15, false alarm 0.5 to 3\\
+Carrier manifest & Independent, classification and origin, $d = 0.72$, $q = 0.10$. Present if courier known and a 0.90 draw succeeds & As above\\
+Broker filing & Documentary, value and classification, $d = 0.68$, $q = 0.14$. Always present & As above\\
+Payment record & Documentary, value, $d = 0.78$, $q = 0.15$. Present for documentary credit or a 0.25 draw & As above\\
+Origin certificate & Documentary, classification and origin, $d = 0.80$, $q = 0.06$. Present for preferential tax types & As above\\
+Port community system & Documentary, all three fields, $d = 0.70$, $q = 0.13$. Always present & As above\\
+Concealment & Share 0.45 of frauds, blinds documentary 0.85, independent 0.25 & Share 0 to 0.85, blinding 0.5 to 1 and 0 to 0.5\\
+Collusion (E4) & Partner export record and port community system corroborate 85\% of fields after the switch day & Switch day 180, 300, 420\\
+Learned policies & Audited share 3\%, $\lambda = 0.35$ per 30 days, Beta(1,1) prior, audit lag 0 & Audited share 1 to 10\%, lag 0 to 365 days\\
+Field weights & Value 0.55, classification 0.25, origin 0.20 & Valuation fraud most common \cite{kim2020date}\\
+Classifier & Gradient-boosted trees, 400 iterations, learning rate 0.06, 48 leaves, $L_2$ 1.0, early stopping on a random 10\% of training rows & Training share 2 to 100\%\\
+Replication & 20 paired replications, 10 on the full substrate, 5 per sensitivity cell & Seeds 1 to 20\\
+Inference & Two-stage bootstrap with 500 draws over replications and test records & Paired for differences\\
+\bottomrule
+\end{tabularx}
+\end{adjustwidth}
+\end{table}
+
+Eight scoring policies are compared under an identical classifier. \textbf{Raw} hands the per-source and per-field indicators to the classifier with no weighting at all, and it is the control that any weighting scheme must beat. It contributes 41 features, namely 18 attestation flags and 18 contradiction flags with two totals and three per-field indicators. Every weighting policy instead contributes a compact summary, which consists of the field-weighted evidence and its three per-field components together with any per-source weights. \textbf{Equal weight} counts contradictions with one common weight. \textbf{Static prior} applies fixed reliabilities and sets $q_s = 1 - d_s$, which is deliberately misspecified against the generator. The \textbf{Chair and Varshney} policy applies Equation~(\ref{eq:llr}) with rates supplied by an oracle. The oracle knows the nominal detection and false-alarm rates of the generator, which no administration can know, and the policy therefore shows what knowledge of those rates would add. It is not an upper bound, because concealment makes the errors of the sources dependent. \textbf{Beta reputation} keeps one Beta posterior per source over audited calls, discounted as in Equation~(\ref{eq:decay}), and weights each call by its mean.
+
+\textbf{Truth discovery} alternates between source weights and inferred truth for eight iterations without labels. It follows the CRH framework \cite{li2014resolving} with one simplification, setting the weight of a source to the negative logarithm of its disagreement rate with the current weighted consensus. \textbf{Learned likelihood ratio} is the CANDID policy, with $d_s$ and $q_s$ estimated as in Equation~(\ref{eq:decay}) from a three per cent audited subset. \textbf{Mixture-corrected} replaces the independent product with a two-component mixture over the latent concealment state, whose share and per-source blinding probabilities are estimated from the audited frauds. That estimate uses a Bernoulli expectation-maximisation algorithm with 40 iterations. All learned policies process the record day by day and use an audited label only after the audit lag has passed. They also learn from audits inside the test quarter as an online system would. That gives them information the raw control never receives, and it can only favour them in the comparison.
+
+The raw control has more features than any weighting policy. Representation could therefore drive a difference. We add four augmented policies that hand the classifier the raw indicators together with the summary of one weighting policy. If weighting carries information the classifier cannot extract, an augmented policy should beat the raw control. A constant weight on a binary indicator cannot change a tree split, and weighting can act only through such aggregate features.
+
+Every selectivity figure follows one protocol. Replication $r$ draws the attestation layer, the audited subset and the hold-out used for early stopping with seed $r$. All policies see the same draw within a replication, which makes every comparison paired. Each metric is computed per replication on the held-out quarter and then averaged, and no predictions are ensembled. Intervals are 95 per cent percentile intervals from a two-stage bootstrap with 400 draws. Each draw resamples replications first and then test records within each class, and a difference between two policies uses the paired resamples.
+
+We report the area under the ROC curve and average precision, together with recall and precision at inspection budgets of one to ten per cent. The dataset records the assessed price and the tax rate of each item, but it does not record the duty that was actually recovered after an inspection. We therefore report a duty-at-risk proxy rather than recovered revenue. For record $i$ it is $\tilde r_i = \min\!\big(y_i \, p_i \, t_i / 100,\ \bar c\big)$, where $y_i$ is the fraud label and $p_i$ the assessed price in won, $t_i$ is the tax rate in per cent and $\bar c$ is the 99th percentile of the positive values in the calibrated sample. Revenue at budget $B$ is the share of the test-quarter total $\sum_i \tilde r_i$ captured by the top $B$ fraction of the ranking. This total is highly concentrated, because two test consignments sit at the cap and each carries 29.3 per cent of it while the five largest carry 88 per cent. We therefore treat recall as the primary budget metric and report the proxy together with versions that remove the largest consignments.
+
+\section{Results}\label{sec:results}
+
+Stage costs on the measurement machine are small and asymmetric. A salted commitment costs @@SC_COMMIT@@ microseconds, while an ECDSA signature costs @@SC_SIGN@@ and a verification @@SC_VERIFY@@. Endorsement cardinality therefore dominates everything else in the pipeline. Table~\ref{tab:bench} and Figure~\ref{fig:implementation} report throughput by configuration, and every entry in the table is the mean of five independent runs. With volatile storage and large blocks it falls from @@TPS_1@@ with one endorser to @@TPS_3@@ with three and @@TPS_5@@ with five. Durable storage with the same blocks reaches @@TPS_3D@@ transactions per second, which lies within the run-to-run variation of the volatile figure. One synchronised write per block is cheap beside 750 signature verifications. Small blocks expose the cost of synchronisation, and durable throughput with blocks of ten falls from @@TPS_3S@@ to @@TPS_3SD@@.
+
+\input{tables/tab_bench.tex}
+
+\begin{figure}[H]
+\begin{adjustwidth}{-\extralength}{0cm}
+\centering
+\includegraphics[width=17.2cm]{figures/R2/fig4_implementation.pdf}
+\end{adjustwidth}
+\caption{Reference implementation performance.\label{fig:implementation}}
+\end{figure}
+
+The closed-loop figures measure how fast a full buffer drains, and they are not the capacity under live arrivals. In the open-loop test the proposing thread must also wait for arrivals, cut blocks on a timer and carry a backlog. Sustainable throughput was @@SUST_DUR@@ transactions per second in both storage modes. Below that rate the 95th percentile falls from about half a second at light load to about 0.12 seconds at 3000 transactions per second, because blocks fill before the timeout expires. Above it the backlog grows during the measurement window and latency rises without bound, which Figure~\ref{fig:implementation}(b) shows directly. The submitted version of this paper reported a lower 95th percentile at saturation than at light load, and that reading was misleading. It came from an earlier load generator that skipped arrivals it could not serve. The corrected test retains every arrival and measures latency from the moment each one was scheduled to arrive.
+
+These figures require a careful comparison rather than a reassuring one. Thakkar et al. reached 2250 transactions per second on 32-core peers after optimisation \cite{thakkar2018benchmarking}, and Kuzlu et al. characterise a Fabric operating regime near 200 transactions per second \cite{kuzlu2019performance}. Our single-endorser figure sits above both of those measurements. The reference node measures a shorter critical path than a full Fabric deployment does, because it omits gossip and membership services and chaincode containers and runs on one node without network hops. What these numbers establish is the cost of the cryptographic and state-database work, and not a claim that CANDID outperforms Fabric.
+
+The comparison with demand is the point of the experiment. Table~\ref{tab:capacity} applies Equation~(\ref{eq:peak}) to four administration sizes. A very large administration lodging sixty million declarations a year generates @@PEAK_VL@@ transactions per second in the baseline case and @@PEAK_VL_S@@ under the stress factor. Against the sustainable durable throughput that is @@UTIL_BASE@@ and @@UTIL_STRESS@@ per cent. Throughput on the measured critical path is therefore not the constraint for this workload, although distributed operation would add network and consensus overheads that we did not measure. The margin in Table~\ref{tab:capacity} is the room available to absorb them.
+
+\input{tables/tab_capacity.tex}
+
+Latency at customs loads is governed by the block timeout. At 50 transactions per second blocks rarely fill, and the median latency of @@LAT_LOW_MED@@ milliseconds reflects the 0.5-second timeout rather than any processing cost. The binding parameter at realistic loads is therefore the block timeout rather than the throughput ceiling. An administration should tune it against its own service objective rather than against a headline throughput number.
+
+The on-chain footprint was measured on serialised records, and the result is less flattering than the usual claim. A three-endorser attestation record occupies @@REC@@ bytes, of which @@SIG@@ bytes are the signature set alone. The transaction envelope adds @@FRAME@@ bytes, most of which is the measured @@CERT@@-byte creator certificate of the submitting client. At @@TXPD@@ records per declaration, counting the three declared commitments, this comes to about @@PERDECL@@ kilobytes per declaration. A bare declaration record with the same envelope measures @@DECLREC@@ bytes, and commitment-only design is therefore about @@RATIO_DECL@@ times larger than that simplest alternative. A design that also commits the supporting documents depends on their size, which we did not measure. Under an assumed 260 kilobytes for four supporting documents, such a design would be about @@RATIO_DOC@@ times larger than CANDID per declaration. The signature set rather than the payload dominates every record. Batching the field groups of one source into a single transaction would reduce the share taken by the envelope.
+
+Listing~\ref{lst:record} reproduces the console output of the reference node for one attestation. The record holds a commitment and a version and the source identifier, and it holds no value at all. Equality of the declared and attested commitments yields the corroboration flag without opening either payload. The partner check accepts the disclosed value and salt and rejects a tampered value, as Algorithm~\ref{alg:attest} requires.
+
+\begin{lstlisting}[caption={Console output of the reference node for one attestation.},label={lst:record}]
+@@LISTING@@
+\end{lstlisting}
+
+Table~\ref{tab:selectivity} and Figure~\ref{fig:selectivity} report the selectivity results on the population-calibrated substrate. Declaration features alone reach an area under the curve of @@M0_AUC@@. Adding the attestation record raises it to @@RAW_AUC@@, with a paired difference of @@D_AUC@@. Recall at a five per cent budget rises from @@M0_R5@@ to @@RAW_R5@@. The duty-at-risk proxy at the same budget rises from @@M0_V5@@ to @@RAW_V5@@, and the wide intervals on that row reflect its concentration in a few consignments. With the five largest test consignments removed the proxy at five per cent still rises from @@M0_V5X@@ to @@RAW_V5X@@.
+
+\input{tables/tab_selectivity.tex}
+
+\begin{figure}[H]
+\begin{adjustwidth}{-\extralength}{0cm}
+\centering
+\includegraphics[width=17.2cm]{figures/R2/fig5_selectivity.pdf}
+\end{adjustwidth}
+\caption{Selectivity and policy contrasts.\label{fig:selectivity}}
+\end{figure}
+
+These are large effects, and they come from an attestation layer we generated on a synthetic substrate. The experiment shows that a risk model which knows who vouched for a consignment can be far better placed than one which knows only what the consignment declares. Figure~\ref{fig:sensitivity} shows how far that depends on the generator. When the detection rate of every source is cut to 0.15 times its baseline, close to its false-alarm rate, the gain in the area under the curve shrinks to @@G_D015@@. At half the baseline detection it is @@G_D050@@, and at 1.15 times it is @@G_D115@@. Tripling the false-alarm rates lowers the gain to @@G_F3@@, and concealing 85 per cent of frauds lowers it to @@G_C85@@. The gain an administration would see therefore depends on its real sources.
+
+\begin{figure}[H]
+\begin{adjustwidth}{-\extralength}{0cm}
+\centering
+\includegraphics[width=17.2cm]{figures/R2/fig6_sensitivity.pdf}
+\end{adjustwidth}
+\caption{Sensitivity to the attestation generator.\label{fig:sensitivity}}
+\end{figure}
+
+Table~\ref{tab:policies} is the central result of the paper, and it is negative. Handing the classifier the raw per-source indicators reaches an area under the curve of @@RAW_AUC@@. No weighting policy beats it in the main experiment. Every paired interval for the difference in the area under the curve lies below zero or straddles it. The oracle rule of Chair and Varshney is given the nominal rates of the generator. It reaches @@CV_AUC@@ with a paired difference of @@CV_D@@, which is a small deficit with an interval that excludes zero. The learned likelihood ratio reaches @@LLR_AUC@@ and Beta reputation @@BETA_AUC@@, and both differences exclude zero. Truth discovery and the static prior and the mixture correction fall a few thousandths below the control, with intervals just below zero. Equal weighting is clearly worse at @@EQ_AUC@@, which shows that source identity carries information. The static prior is misspecified by construction and still lands within @@STATIC_GAP@@ of the oracle, which suggests that precise rates matter little here.
+
+\input{tables/tab_policies.tex}
+
+The augmented policies answer the question of representation. Appending the learned ratio or the Beta trust weights or the mixture ratio to the raw indicators did not raise the area under the curve, and the learned ratio lowered it slightly. Appending the oracle ratio left the area under the curve unchanged at a difference of @@AUG_CV_D@@ and raised average precision by @@AUG_CV_AP@@. That is the only improvement over the control in the main experiment, and it requires the true rates of the generator that no administration can observe. On the uncalibrated substrate the pattern is the same. The raw control reaches @@FULL_RAW@@, the oracle and static and truth-discovery policies and the mixture correction differ from it by less than @@FULL_MAXD@@ with intervals that include zero, and the learned and Beta policies are worse.
+
+The sensitivity analysis extends this comparison to every generator setting and label budget in Table~\ref{tab:params}. No deployable policy beat the raw control in any cell. The oracle ratio on its own never beat it either, even with the true rates in hand. Appended to the raw indicators it gained in the two noisiest settings. The gain was @@AUG_F3@@ in the area under the curve when false alarms were tripled and @@AUG_B1@@ when documentary sources were fully blinded. Without concealment every policy tied with the raw control. As the concealed share rose to 0.85 the raw indicators pulled ahead of the oracle ratio by @@CONC_GAP@@, which is the pattern a scalar summary cannot represent. Figure~\ref{fig:labels} shows the label budget. With two per cent of the training records the raw control reached @@TF2_RAW@@, and the mixture correction tied with it while the oracle ratio fell behind by @@TF2_CV@@.
+
+\begin{figure}[H]
+\begin{adjustwidth}{-\extralength}{0cm}
+\centering
+\includegraphics[width=17.2cm]{figures/R2/fig7_labels.pdf}
+\end{adjustwidth}
+\caption{Effect of the label budget.\label{fig:labels}}
+\end{figure}
+
+Figure~\ref{fig:robustness} reports the two robustness experiments. @@LATENCY_TEXT@@ Real post-clearance audit returns ground truth months after release. Any weighting scheme that depends on it is therefore working from evidence that its own forgetting has already discounted.
+
+\begin{figure}[H]
+\begin{adjustwidth}{-\extralength}{0cm}
+\centering
+\includegraphics[width=17.2cm]{figures/R2/fig8_robustness.pdf}
+\end{adjustwidth}
+\caption{Robustness to audit lag and collusion.\label{fig:robustness}}
+\end{figure}
+
+The non-stationary experiment compromises the partner export record and the port community system, which are the most accurate independent source and an always-present documentary source. After the switch day each corroborates 85 per cent of the fields it observes regardless of the truth. @@NS_TEXT@@ The advantage we expected forgetting to deliver did not survive replication. An earlier version of this experiment, run on a single draw of the attestation layer, had appeared to show it.
+
+\section{Discussion}\label{sec:discussion}
+
+Four claims survive, each within stated limits, and one prominent claim does not. The first is that ledger throughput did not limit a customs workload on the measured critical path. Durable storage served the peak demand of a very large administration at @@UTIL_BASE@@ per cent of capacity. Under the stress factor the share was @@UTIL_STRESS@@ per cent, and this statement covers one node and the measured workload only. It does not cover distributed operation or network latency or operating cost. The Korean pilot found operating cost to be the binding problem \cite{wconews2020korea}, and none of our measurements addresses that cost. The second claim is that recording provenance is worth a great deal when sources are informative. Under the baseline generator it raised the area under the curve from @@M0_AUC@@ to @@RAW_AUC@@, and the sensitivity analysis shows that this gain belongs to the sources rather than to the architecture. It falls towards zero as their detection rate approaches their false-alarm rate. The third is that commitment-only design is the right choice against document commitment and not against every alternative. The fourth is that block timeout governs latency at the loads customs generates.
+
+The claim that does not survive is the one this architecture was originally built around. Weighting attestations by source credibility did not improve selectivity in any setting we examined. No deployable policy beat the raw control in the main experiment, on the uncalibrated substrate or in any cell of the sensitivity analysis. The learned likelihood ratio and Beta reputation were usually worse by a margin that excludes zero. The oracle ratio was never better on its own, even though it was handed the true parameters of the generator. Appended to the raw indicators it added a small gain in average precision in the main experiment. It also added a small gain in the area under the curve when false alarms were tripled or documentary sources were fully blinded. That ceiling requires the true rates, which no administration knows. It bounds what better estimation of the rates could achieve in this setting, and the bound is small.
+
+The mechanism is now clearer than our first account of it. The classifier receives the per-source indicators and many labelled declarations, and it learns its own weight for each source from those labels. A weighting policy offers prior structure that the labels already supply. Even with two per cent of the training records the raw control was not beaten. Concealment adds a second and separate effect. Without concealment every policy tied with the raw control, and the advantage of the raw indicators over the oracle ratio grew with the share of concealed frauds. A scalar summary cannot represent the pattern in which documentary sources agree while independent sources are silent, and the classifier can.
+
+These results are specific to the evaluated setting, and we state their scope plainly. They concern an administration that already runs a non-linear risk model with a supply of audited labels, and sources whose behaviour follows the generator in Table~\ref{tab:params}. They do not show that reputation systems are useless elsewhere. Settings without labels or without a learned risk model, or sources that adapt to the weighting itself, lie outside what we tested. For the evaluated setting the practical inference is modest. An administration should first capture attestations and record which source made them, and it should pass that record to its existing risk model. A reputation subsystem should be added only if it beats that baseline on the administration's own data.
+
+W\"ust and Gervais provide the decision procedure, and we owe the reader an honest application of it to our own design \cite{wust2018needblockchain}. The answer differs from plane to plane. The provenance plane needs no ledger whatsoever, because it is a statistical record computed by the administration from data the administration holds. The control plane likewise needs none. Every selectivity result in Section~\ref{sec:results} would be unchanged if these two planes ran on a relational database. The attestation plane needs a tamper-evident append-only log with multi-party endorsement. Whether that requires a distributed ledger depends on whether the parties who must witness an attestation trust the log of the administration itself. Within one administration they generally do, and a signed log then suffices. Benchmarks that place private blockchains well below conventional databases in throughput support that reading \cite{dinh2017blockbench}.
+
+The interoperability plane is where the case is strongest. Two administrations that do not trust the infrastructure of the other, exchanging attestations that may later be disputed in a legal proceeding, need non-repudiation that neither party can revoke alone \cite{warkentin2020triad}. That is a ledger property rather than a database property. A single administration should begin with a signed log and the provenance record, and it can measure the selectivity gain on its own sources. It should consider a distributed ledger once it begins exchanging attestations across a border. Our recommendation is therefore staged, and it follows from the incremental-value requirement listed as R7 in Table~\ref{tab:requirements}.
+
+CANDID differs from prior customs blockchain designs in what it puts on the ledger and in what it records about the inputs. Designs for certificates of origin put documents on a ledger and treat immutability as the contribution \cite{tyagi2023origin,kim2023railroad}. The architecture of Van Engelenburg et al. shares our concern for confidentiality and is the closest antecedent we have found \cite{vanengelenburg2019b2g}. It records the party that added an event rather than the outcome of an external attestation on a named field. Related frameworks have applied blockchain to honey production \cite{almiani2025honey} and location-aware services \cite{almiani2023auction}, and to real estate valuation \cite{almiani2026realestate} and credential validation \cite{aljaziri2026skillchain}. Each of them met the same input-truthfulness question in a different guise. The provenance record is the answer this paper proposes for that shared problem.
+
+\section{Limitations and Future Research}\label{sec:limitations}
+
+The most serious limitation is that the attestation layer is synthetic. The mapping from fraud to source disagreement is ours, and the size of the provenance gain is a property of parameters we chose. The sensitivity analysis shows how the gain moves with those parameters, but it cannot say where a real administration sits. The policy comparison is less exposed, because every policy sees the same layer, and the negative result held across every cell we ran. The assignment of field-level falsity is also stylised, and the classification rule in particular is an arbitrary partition.
+
+The substrate is synthetic as well. Its records and labels were generated by a model fitted to real declarations, and its publishers found that boosted trees score higher on it than on the source data \cite{jeong2022dataset}. It inherits the selective-labels bias of its source, since it was drawn from the inspected portion of the declaration stream \cite{jeong2022dataset,kim2023activelearning}. Our calibrated sample corrects the base rate but not the selection mechanism, and the importer and seller histories use labels that a real administration would hold only for inspected goods. Every figure comes from one dataset that describes a single administration. The revenue figures also rest on a proxy that a handful of consignments dominate.
+
+The implementation results have their own limits. The reference node is not Hyperledger Fabric and characterises only the cryptographic and state-database critical path on one node with two virtual cores. It has no gossip or membership services, no chaincode containers and no network latency. Durable writes were measured on the virtual storage of one cloud machine, which may differ from dedicated hardware. Operating cost and governance cost were not measured at all. The control plane rule engine and the interoperability gateway are specified but not implemented, and Table~\ref{tab:planes} records what was evaluated.
+
+Several directions for future research follow from these limits. The first is a field study with an administration that can supply real attestations from named sources, which would replace the synthetic layer with measured behaviour. The second is a multi-node deployment on a production platform, which would measure the omitted overheads and the operating cost. Correcting for selective labels in the audited subset would improve every number in this paper that depends on those labels \cite{singh2023graphfc}. Sharing provenance records rather than raw declarations could extend cross-border knowledge transfer without exposing trade data \cite{park2022domain}.
+
+Generative models are a further direction, and they fit the design without changing it. An officer must still read and reconcile the case file. Generative models could draft explanations of the attestation record, decisions that must withstand appeal and candidate declarative rules from amended legal text, with a legal officer verifying each one \cite{micheler2020regtech,governatori2018legal}. Benchmarking of large language models on government-affairs tasks found some models below 35 per cent accuracy under input perturbation \cite{liu2025msgabench}. A generative model is also a source in the sense used here, since it produces assertions whose truth its mechanism does not guarantee. The provenance plane should therefore record its outputs as one more source, and our results suggest recording them rather than weighting them.
+
+\section{Conclusions}\label{sec:conclusion}
+
+Blockchain has under-delivered in customs administration, and we have argued that one reason is the target it was aimed at. Making a record immutable does nothing to make it true. A field in which only two of 110 surveyed administrations reported full deployment in 2022 is consistent with that mistake, although governance and commercial factors contributed as well. This paper reframed the problem as one of evidence rather than of storage.
+
+CANDID addresses it in four planes that can be adopted one at a time. The attestation plane commits salted field-group hashes rather than payloads. Its reference implementation sustained @@SUST_DUR@@ transactions per second with durable storage on two virtual cores, which is well above the estimated peak demand of a very large administration. The provenance plane records which source attested to what. Under the baseline generator that record raised the area under the curve from @@M0_AUC@@ to @@RAW_AUC@@ and recall at a five per cent budget from @@M0_R5@@ to @@RAW_R5@@. The size of that gain depends on how informative the sources are. The control plane keeps legal authority with the officer who signs the release decision. Only the interoperability plane clearly needs a distributed ledger. That is the one plane for which we can make an honest case that such a ledger is required.
+
+Our most useful finding is a negative one. We implemented seven policies for weighting attestations by source credibility, among them the rule that is optimal under conditional independence and an oracle variant handed the true parameters. None of them improved on passing the raw record to the classifier in our setting, and the deployable ones were often worse. Within that setting, capturing provenance properly is a smaller undertaking than building a reputation subsystem, and it is also the more useful of the two.
+
+\vspace{6pt}
+
+\authorcontributions{The single author carried out the conceptualisation, methodology, software, validation, formal analysis, investigation, data curation, writing and visualisation. The author has read and agreed to the published version of the manuscript.}
+
+\funding{This research received no external funding.}
+
+\institutionalreview{Not applicable.}
+
+\informedconsent{Not applicable.}
+
+\dataavailability{The substrate is the publicly available Customs Import Declaration Dataset \cite{jeong2022dataset}. The reference implementation, the attestation generator, the eight scoring policies, the evaluation and analysis scripts and every result file are provided as supplementary material, together with a list of pinned software versions. The scripts write every number, table and figure in this paper into one results folder, and the per-replication outputs from which the intervals are computed are included.}
+
+%\acknowledgments{The author thanks Khaled Almi'ani for his support with the simulation code and for the valuable feedback and discussions he contributed throughout the development of this work, drawing on his experience and expertise in the field.}
+
+\conflictsofinterest{The author declares no conflict of interest.}
+
+\abbreviations{Abbreviations}{
+The following abbreviations are used in this manuscript:\\
+
+\noindent
+\begin{tabular}{@{}ll}
+AEO & Authorised economic operator\\
+AP & Average precision\\
+AUC & Area under the receiver operating characteristic curve\\
+CANDID & Customs Attestation Network for Declaration Integrity and Disclosure\\
+CI & Confidence interval\\
+CTGAN & Conditional tabular generative adversarial network\\
+ECDSA & Elliptic curve digital signature algorithm\\
+HKDF & Hash-based key derivation function\\
+MVCC & Multi-version concurrency control\\
+WAL & Write-ahead log\\
+WCO & World Customs Organization\\
+\end{tabular}
+}
+
+\begin{adjustwidth}{-\extralength}{0cm}
+\reftitle{References}
+\bibliography{references_2.0}
+\end{adjustwidth}
+
+\end{document}

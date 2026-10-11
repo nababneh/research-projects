@@ -1,0 +1,31 @@
+committed,seconds,tps,mean_latency_ms,p50_ms,p95_ms,p99_ms,block_height,config,block_size,endorsers,durable,rep
+12000,4.109,2920.5,2.78,2.66,4.02,4.91,1200,"small blocks, 3 endorsers",10,3,False,0
+12000,4.062,2954.3,2.76,2.63,3.96,5.12,1200,"small blocks, 3 endorsers",10,3,False,1
+12000,4.072,2947.1,2.76,2.67,3.91,4.55,1200,"small blocks, 3 endorsers",10,3,False,2
+12000,3.821,3140.4,2.59,2.47,3.67,4.15,1200,"small blocks, 3 endorsers",10,3,False,3
+12000,3.897,3079.4,2.64,2.5,3.79,4.65,1200,"small blocks, 3 endorsers",10,3,False,4
+12000,3.191,3760.4,53.26,52.27,71.43,85.68,48,"large blocks, 3 endorsers",250,3,False,0
+12000,3.31,3625.5,55.98,54.39,79.53,86.69,48,"large blocks, 3 endorsers",250,3,False,1
+12000,3.133,3830.1,52.38,51.99,67.07,72.89,48,"large blocks, 3 endorsers",250,3,False,2
+12000,3.094,3878.8,51.54,51.27,65.1,72.26,48,"large blocks, 3 endorsers",250,3,False,3
+12000,3.843,3122.6,67.53,69.28,89.0,95.89,48,"large blocks, 3 endorsers",250,3,False,4
+12000,1.264,9491.5,20.98,20.64,28.71,34.06,48,"large blocks, 1 endorser",250,1,False,0
+12000,1.201,9994.6,20.02,19.8,26.04,30.16,48,"large blocks, 1 endorser",250,1,False,1
+12000,1.278,9389.0,21.12,20.75,29.31,33.2,48,"large blocks, 1 endorser",250,1,False,2
+12000,1.294,9274.6,21.58,21.13,29.67,34.11,48,"large blocks, 1 endorser",250,1,False,3
+12000,1.361,8815.1,23.22,22.28,35.25,43.25,48,"large blocks, 1 endorser",250,1,False,4
+12000,4.824,2487.6,80.69,80.2,102.59,114.65,48,"large blocks, 5 endorsers",250,5,False,0
+12000,4.734,2535.1,79.71,79.34,99.01,108.75,48,"large blocks, 5 endorsers",250,5,False,1
+12000,4.888,2455.1,81.95,81.04,103.99,121.19,48,"large blocks, 5 endorsers",250,5,False,2
+12000,5.012,2394.2,84.68,82.65,118.39,142.26,48,"large blocks, 5 endorsers",250,5,False,3
+12000,4.824,2487.7,81.36,80.93,103.36,116.2,48,"large blocks, 5 endorsers",250,5,False,4
+12000,3.147,3812.9,52.89,52.27,68.11,84.3,48,"large blocks, 3 endorsers, durable",250,3,True,0
+12000,3.193,3758.3,53.24,52.44,70.53,79.11,48,"large blocks, 3 endorsers, durable",250,3,True,1
+12000,3.207,3742.2,53.64,53.18,68.99,76.47,48,"large blocks, 3 endorsers, durable",250,3,True,2
+12000,3.238,3706.2,54.01,53.52,69.02,80.76,48,"large blocks, 3 endorsers, durable",250,3,True,3
+12000,3.276,3662.6,55.15,54.11,74.62,95.23,48,"large blocks, 3 endorsers, durable",250,3,True,4
+12000,4.671,2568.8,3.19,3.05,4.58,5.71,1200,"small blocks, 3 endorsers, durable",10,3,True,0
+12000,4.68,2563.9,3.2,3.04,4.63,5.89,1200,"small blocks, 3 endorsers, durable",10,3,True,1
+12000,4.652,2579.8,3.19,3.05,4.59,5.53,1200,"small blocks, 3 endorsers, durable",10,3,True,2
+12000,4.729,2537.3,3.24,3.07,4.55,5.79,1200,"small blocks, 3 endorsers, durable",10,3,True,3
+12000,4.427,2710.4,3.03,2.91,4.29,5.42,1200,"small blocks, 3 endorsers, durable",10,3,True,4

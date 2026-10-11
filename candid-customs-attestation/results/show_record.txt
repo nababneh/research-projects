@@ -1,0 +1,12 @@
+$ python3 show_record.py
+block 1 committed: 2 valid, 0 invalid
+key        D2021061400417|value|partner_export_record
+version    1
+source     partner_export_record
+commitment ad446f09e7891ee019ac20ca19a0ce02b284b905c0fd969ed20408c1c71c9977
+signatures peer0: 71 B, peer1: 71 B, peer2: 70 B
+declared commitment equals source commitment: True  ->  a = 1
+disclose to partner: value 'KRW 1,250,000', salt 0340ac7c93141cf05a8e2eeac0f6a5a3
+partner check SHA256(salt || value) == commitment: True
+tampered value 'KRW 1,050,000' accepted: False
+endorsement signatures verify: True

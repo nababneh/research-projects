@@ -1,0 +1,4 @@
+stage,microseconds,sd
+commitment_us,3.791,0.21
+sign_us,26.412,1.395
+verify_us,78.295,1.848
